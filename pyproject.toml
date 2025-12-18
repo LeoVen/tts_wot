@@ -1,0 +1,17 @@
+[project]
+name = "tts_wot"
+version = "0.1.0"
+description = "TTS for WoT"
+readme = "README.md"
+requires-python = "==3.11.6"
+dependencies = [
+  "beautifulsoup4>=4.14.3",
+  "chatterbox-tts>=0.1.1",
+  "httpx>=0.28.1",
+  "nltk>=3.9.1",
+  "setuptools>=80.9.0",
+  "torchaudio>=2.6.0",
+]
+
+[dependency-groups]
+dev = ["debugpy"]
