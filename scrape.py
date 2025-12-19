@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 from pathlib import Path
 
@@ -7,69 +6,23 @@ import bs4
 import httpx
 from bs4 import Tag
 from httpx import URL
+from pydantic import TypeAdapter
 
-# TODO:
+from models import BookInfo, Chapter
+
+# All of these have been manually fixed with my local HTML files:
+#
 # could not find Summary tag for hout/03/C29.html -          https://library.tarvalon.net/index.php?title=The_Dragon_Reborn:_Chapter_29
 # could not find Summary tag for hout/06/C40.html -          https://library.tarvalon.net/index.php?title=Lord_of_Chaos:_Chapter_40
 # could not find parent H2 of Summary for hout/07/C01.html - https://library.tarvalon.net/index.php?title=A_Crown_of_Swords:_Chapter_1
 # could not find Summary tag for hout/07/C32.html -          https://library.tarvalon.net/index.php?title=A_Crown_of_Swords:_Chapter_32
-# All fixes can be done inside of get_start_summary()
-# Also check:
-# https://library.tarvalon.net/index.php?title=A_Crown_of_Swords:_Chapter_33
+#
 # Problem: I think Summary and Outline are swapped
-
-
-class Chapter:
-    idx: int
-    name: str
-    link: str
-
-    path: Path
-    paragraphs: list[str] = []
-
-    def __init__(self, idx: int, name: str, link: str):
-        self.idx = idx
-        self.name = name
-        self.link = link
-
-    def as_dict(self):
-        return {
-            "idx": self.idx,
-            "name": self.name,
-            "link": self.link,
-            "path": str(self.path),
-            "paragraphs": self.paragraphs,
-        }
-
-
-class BookInfo:
-    idx: str
-    source: URL
-    book_name: str
-    path: Path
-
-    chapters: list[Chapter]
-
-    def __init__(
-        self,
-        idx: str,
-        source: URL,
-        book_name: str,
-        path: Path,
-    ):
-        self.idx = idx
-        self.source = source
-        self.book_name = book_name
-        self.path = path
-
-    def as_dict(self):
-        return {
-            "idx": self.idx,
-            "source": str(self.source),
-            "book_name": self.book_name,
-            "path": str(self.path),
-            "chapters": [chapter.as_dict() for chapter in self.chapters],
-        }
+# https://library.tarvalon.net/index.php?title=A_Crown_of_Swords:_Chapter_33
+# https://library.tarvalon.net/index.php?title=The_Eye_of_the_World:_Chapter_27
+#
+# Repeated Summary or malformed pages:
+# https://library.tarvalon.net/index.php?title=The_Fires_of_Heaven:_Chapter_10
 
 
 # Root URL
@@ -116,7 +69,15 @@ def get_main_pages() -> list[BookInfo]:
         url = URL(f"{root}{path}")
         out_path = Path(f"{hout}/book_index_{i}.html")
 
-        result.append(BookInfo(f"{i:02}", url, name, out_path))
+        result.append(
+            BookInfo(
+                idx=f"{i:02}",
+                source=str(url),
+                book_name=name,
+                path=str(out_path),
+                chapters=[],
+            )
+        )
 
         if args.fetch:
             os.makedirs(hout, exist_ok=True)
@@ -143,7 +104,7 @@ def get_chapter_links(infos: list[BookInfo]) -> list[BookInfo]:
     """
 
     for info in infos:
-        with info.path.open() as file:
+        with Path(info.path).open() as file:
             content = file.read()
             html = bs4.BeautifulSoup(content, "html.parser")
 
@@ -165,7 +126,16 @@ def get_chapter_links(infos: list[BookInfo]) -> list[BookInfo]:
                     )
                     continue
 
-                chapters.append(Chapter(idx, text, str(href)))
+                chapters.append(
+                    Chapter(
+                        idx=idx,
+                        name=text,
+                        link=str(href),
+                        path="",
+                        paragraphs=[],
+                        title="",
+                    )
+                )
 
             info.chapters = chapters
 
@@ -187,7 +157,7 @@ def get_chapter_pages(infos: list[BookInfo]) -> list[BookInfo]:
 
         for i, chapter in enumerate(info.chapters):
             link = chapter.link
-            chapter.path = Path(f"{path_prefix}/C{i:02}.html")
+            chapter.path = f"{path_prefix}/C{i:02}.html"
 
             if args.fetch:
                 url = URL(f"{root}{link}")
@@ -217,15 +187,16 @@ skips = [
 ]
 
 
-def get_chapter_title(in_path: Path, soup: bs4.BeautifulSoup) -> Tag | None:
+def get_chapter_title(in_path: Path, soup: bs4.BeautifulSoup) -> str:
     # Assumption:
     # All titles are in this order of tags
     title = soup.select_one("#mw-content-text b center font")
 
     if title is None:
         print(f"could not find chapter title for {in_path}")
+        return ""
 
-    return title
+    return str.strip(title.text)
 
 
 def get_start_summary(in_path: Path, soup: bs4.BeautifulSoup) -> Tag | None:
@@ -251,10 +222,12 @@ def prepare_data(infos: list[BookInfo]) -> list[BookInfo]:
         in_dir = info.path
 
         for chapter in info.chapters:
-            in_path = chapter.path
+            in_path = Path(chapter.path)
 
             content = in_path.read_text()
             soup = bs4.BeautifulSoup(content, "html.parser")
+
+            chapter.title = get_chapter_title(in_path, soup)
 
             summary = get_start_summary(in_path, soup)
 
@@ -283,8 +256,10 @@ def prepare_data(infos: list[BookInfo]) -> list[BookInfo]:
 def save_final_data(infos: list[BookInfo]):
     os.makedirs(data, exist_ok=True)
 
-    with open(Path(f"{data}/output.json"), "w") as file:
-        file.write(json.dumps([info.as_dict() for info in infos]))
+    with open(Path(f"{data}/output.json"), "wb") as file:
+        adapter = TypeAdapter(list[BookInfo])
+
+        file.write(adapter.dump_json(infos))
 
 
 if __name__ == "__main__":
@@ -296,3 +271,8 @@ if __name__ == "__main__":
     save_final_data(infos)
 
     print("Total page links", sum([len(link.chapters) for link in infos]))
+
+    for info in infos:
+        for chapter in info.chapters:
+            if len(str(chapter.paragraphs)) < 500:
+                print(f"Small chapter: {info.book_name}: {chapter.path}")

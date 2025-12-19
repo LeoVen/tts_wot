@@ -32,5 +32,5 @@ Then press `q` to stop and quit.
 ## Folder setup
 
 - `hout` is where all the HTMLs are stored
-- `data` is where the treated text is stored
+- `data` is where the treated text is stored along with the generated voices
 - `samples` is where voice samples are stored
