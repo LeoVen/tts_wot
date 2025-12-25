@@ -1,4 +1,5 @@
 # copied from https://github.com/vndee/local-talking-llm
+import gc
 import warnings
 
 import nltk
@@ -136,3 +137,10 @@ class TextToSpeechService:
         """
         wav = self.model.generate(text, audio_prompt_path=audio_prompt_path)
         ta.save(output_path, wav, self.sample_rate)
+
+    def aggressive_cleanup(self):
+        gc.collect()
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

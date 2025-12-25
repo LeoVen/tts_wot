@@ -56,4 +56,6 @@ if __name__ == "__main__":
 
             print(f"#####\n##### Generating {out_voice}\n#####")
 
+            tts.aggressive_cleanup()
+
             generate_chapter_audio(text, out_voice, "samples/rpike01.wav")
